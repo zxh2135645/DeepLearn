@@ -10,13 +10,21 @@ imageDir = 'C:/Users/ZhangX1/Documents/MATLAB/CNNTraining256/';
 % downloadTrainedUnet(trainedUnet_url,imageDir);
 
 %%
-imageDir = 'C:/Users/ZhangX1/Documents/MATLAB/CNNTraining256/';
+%imageDir = 'C:/Users/ZhangX1/Documents/MATLAB/CNNTraining256/';
+imageDir = 'C:/Users/ZhangX1/Documents/MATLAB/CNNTraining128/';
+imageDir = 'C:/Users/ZhangX1/Documents/MATLAB/CNNTrainingCrop64/';
 training_data = imageDatastore(cat(2, imageDir, 'TrainingData'));
-label_data = imageDatastore(cat(2, imageDir, 'LabelData'));
+training_data = imageDatastore(cat(2, imageDir, 'NulBkgdTrainingData'));
+% label_data = imageDatastore(cat(2, imageDir, 'LabelData'));
+label_data = imageDatastore(cat(2, imageDir, 'CompositeLabel2'));
 
-classNames = ["NonInfarct","Infarct"];
-pixelLabelIds = [0 255];
-pxds = pixelLabelDatastore(cat(2, imageDir, 'LabelData'), classNames, pixelLabelIds);
+%classNames = ["NonInfarct","Infarct"];
+%classNames = ["Backgroud", "Heart"];
+%pixelLabelIds = [1, 2];
+
+classNames = ["Background", "Myocardium", "BloodPool", "Infarct"];
+pixelLabelIds = [1, 2, 3, 4];
+pxds = pixelLabelDatastore(cat(2, imageDir, 'CompositeLabel2'), classNames, pixelLabelIds);
 
 %%
 % classNames = [ "RoadMarkings","Tree","Building","Vehicle","Person", ...
@@ -27,9 +35,9 @@ pxds = pixelLabelDatastore(cat(2, imageDir, 'LabelData'), classNames, pixelLabel
 % pixelLabelIds = 1:18;
 % pxds = pixelLabelDatastore('train_labels.png',classNames,pixelLabelIds);
 %% Create the PixelLabelImagePatchDatastore from the image datastore and the pixel label datastore.
-ds = PixelLabelImagePatchDatastore(training_data,pxds,'PatchSize',256,...
-                                             'MiniBatchSize',16,...
-                                             'BatchesPerImage',1000)  
+ds = PixelLabelImagePatchDatastore(training_data,pxds,'PatchSize',64,...
+                                             'MiniBatchSize', 2,...
+                                             'BatchesPerImage',1)  
          
 %[imd1, imd2, imd3, imd4, imd5] = splitEachLabel(ds, 0.2, 0.2, 0.2, 0.2, 0.2, 'randomize'); 
 
@@ -67,7 +75,7 @@ lgraph = createUnet();
 %% Select Training Options
 initialLearningRate = 0.05;
 maxEpochs = 150;
-minibatchSize = 16;
+minibatchSize = 2;
 l2reg = 0.0001;
 
 options = trainingOptions('sgdm',...
@@ -89,4 +97,64 @@ if doTraining
     [net,info] = trainNetwork(ds,lgraph,options); 
 else 
     load(fullfile(imageDir,'trainedUnet','multispectralUnet.mat'));
+end
+
+%% Save the network
+save(cat(2, imageDir, 'UnetCrop64CompositeNB.mat'), 'net');
+
+%% Evaluate Segmentation results
+imageDir = 'C:/Users/ZhangX1/Documents/MATLAB/CNNTrainingCrop64/';
+load(cat(2, imageDir, 'UnetCrop64CompositeNB.mat'));
+classNames = ["Background", "Myocardium", "BloodPool", "Infarct"];
+pixelLabelIds = [1, 2, 3, 4];
+
+testImagesDir = fullfile(imageDir, 'NulBkgdTestingData');
+%testLabelsDir = fullfile(imageDir, 'HeartLabelTest');
+% testImagesDir = fullfile(imageDir, 'TestingData');
+testLabelsDir = fullfile(imageDir, 'CompositeLabelTest2');
+% OutDir = fullfile(imageDir, 'HeartLabelPred');
+OutDir = fullfile(imageDir, 'NulBkgdLabelPred');
+% OutDir = fullfile(imageDir, 'CompositeLabel2');
+if ~exist(OutDir, 'dir')
+    mkdir(OutDir)
+end
+
+imds_test = imageDatastore(testImagesDir);
+pxdsTruth = pixelLabelDatastore(testLabelsDir, classNames, pixelLabelIds);
+pxdsResults = semanticseg(imds_test, net, "WriteLocation", OutDir);
+
+%% Compute confusion matrix and Segmentation Metrics
+metrics = evaluateSemanticSegmentation(pxdsResults,pxdsTruth);
+metrics.ClassMetrics
+metrics.NormalizedConfusionMatrix
+
+%% Plot confusion matrix
+T = metrics.NormalizedConfusionMatrix;
+t = zeros(size(T));
+for i = 1:size(T, 1)
+    for j = 1:size(T, 2)
+        t(i,j) = T{i,j};
+    end
+end
+
+figure();
+imagesc(t)
+set(gca,'XtickLabel',{'', 'Background', '', 'Myocardium', '', 'BloodPool', '', 'Infarct', ''})
+set(gca,'YtickLabel',{'', 'Background', '', 'Myocardium', '', 'BloodPool', '', 'Infarct', ''})
+
+color_spec = cell(size(t));
+for i = 1:size(T, 1)
+    for j = 1:size(T, 2)
+        if t(i,j) > 0.5
+            color_spec{i,j} = [0 0 0];
+        else
+            color_spec{i,j} = [1 1 1];
+        end
+    end
+end
+
+for i = 1:size(T, 1)
+    for j = 1:size(T, 2)
+        text(i, j, num2str(round(t(j,i),2, 'significant')), 'HorizontalAlignment', 'center', 'Color', color_spec{i,j}, 'FontSize', 12);
+    end
 end

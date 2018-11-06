@@ -3,10 +3,11 @@ function lgraph = createUnet()
 % EDIT: modify these parameters for your application.
 encoderDepth = 4;
 initialEncoderNumChannels = 64;
-inputTileSize = [256 256 1];
+%inputTileSize = [256 256 1];
+inputTileSize = [64 64 1];
 convFilterSize = [3 3];
 inputNumChannels = 1;
-numClasses = 2;
+numClasses = 4;
 
 
 inputlayer = imageInputLayer(inputTileSize,'Name','ImageInputLayer');
@@ -42,6 +43,7 @@ finalConv.Weights = randn(1,1,finalDecoderNumChannels,numClasses);
 finalConv.Bias = zeros(1,1,numClasses);
 
 smLayer = softmaxLayer('Name','Softmax-Layer');
+
 pixelClassLayer = pixelClassificationLayer('Name','Segmentation-Layer');
 
 layers = [layers; finalConv; smLayer; pixelClassLayer];
